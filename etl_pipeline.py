@@ -1,14 +1,22 @@
+import json
 import pandas as pd
-import psycopg2
+from sqlalchemy import create_engine
 
-def load_to_redshift(csv_file, conn_params):
-    df = pd.read_csv(csv_file)
-    conn = psycopg2.connect(**conn_params)
-    cursor = conn.cursor()
+# Load simulated events
+with open("moderation_events.json") as f:
+    data = json.load(f)
 
-    for _, row in df.iterrows():
-        cursor.execute("INSERT INTO moderation_routing (content_id, assigned_to, cost) VALUES (%s, %s, %s)",
-                       (row['content_id'], row['assigned_to'], row['cost']))
-    conn.commit()
-    cursor.close()
-    conn.close()
+# Convert to DataFrame
+df = pd.DataFrame(data)
+
+# Apply data cleaning and transformations
+df["timestamp"] = pd.to_datetime(df["timestamp"])
+df["is_accurate"] = df["review_accuracy"] > 0.85
+df["cost_bucket"] = pd.cut(df["review_cost"], bins=[0, 2, 4, 5], labels=["Low", "Medium", "High"])
+
+# Load into Redshift (via SQLAlchemy mock)
+engine = create_engine("postgresql://username:password@redshift-cluster-endpoint/dbname")
+
+df.to_sql("moderation_reviews", con=engine, if_exists='replace', index=False)
+
+print("ETL pipeline executed successfully. Data loaded into Redshift.")
